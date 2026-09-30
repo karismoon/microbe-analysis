@@ -9,10 +9,8 @@ library(readxl)
 library(tidyverse)
 
 metabolic_result_full_community_path <- "data/METABOLIC_result_full_community.xlsx"
-metabolic_result_terracidiphilus_path <- "data/METABOLIC_result_terracidiphilus_5_Carter.xlsx"
+
 df_metabolic_result <- read_excel(metabolic_result_full_community_path)
-df_5 <- read_excel(metabolic_result_terracidiphilus_path)
-# glimpse(df_5)
 # df_metabolic_result %>% glimpse()
 ```
 
@@ -80,27 +78,4 @@ df_all_present <-
 df_all_present %>% 
   select(Function)
 ```
-
-```{r}
-# Terracidiphilus (5) functions
-
-df_all_filter_5 <-
-  df_metabolic_result %>% 
-  filter( 
-    `5Presence` == "Present"
-    )
-# df_all_filter_5 %>% 
-#   select(Category) %>% 
-#   unique()
-  # glimpse()
-
-df_5 %>% 
-  filter(terracidiphilus.Hmm.presence == "Present") %>%
-  filter(ocallatibacter_riparius.Hmm.presence == "Absent") %>%
-  filter(telmotobacter_bradus.Hmm.presence == "Absent") %>%
-  select(Function)
-```
-
-Terracidiphilus is unique from ocallatibacter riparius and telmotobacter bradus, with Acetate => Acetaldehyde and Ni-Fe Hydrogenase functionalities. 
-
 

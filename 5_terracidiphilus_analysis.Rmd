@@ -1,0 +1,30 @@
+---
+title: "5 Terracidiphilus Analysis"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(readxl)
+library(tidyverse)
+
+metabolic_result_terracidiphilus_path <- "data/METABOLIC_result_terracidiphilus_5_Carter.xlsx"
+df_5 <- read_excel(metabolic_result_terracidiphilus_path)
+# glimpse(df_5)
+```
+
+
+```{r}
+# df_5 %>% 
+#   select(Category) %>% 
+#   unique()
+  # glimpse()
+
+df_5 %>% 
+  filter(terracidiphilus.Hmm.presence == "Present") %>%
+  filter(ocallatibacter_riparius.Hmm.presence == "Absent") %>%
+  filter(telmotobacter_bradus.Hmm.presence == "Absent") %>%
+  select(Function)
+```
+
+Terracidiphilus is unique from ocallatibacter riparius and telmotobacter bradus, with Acetate => Acetaldehyde and Ni-Fe Hydrogenase functionalities. 
