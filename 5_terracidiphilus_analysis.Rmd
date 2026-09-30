@@ -15,11 +15,16 @@ df_5 <- read_excel(metabolic_result_terracidiphilus_path)
 
 
 ```{r}
-# df_5 %>% 
-#   select(Category) %>% 
-#   unique()
-  # glimpse()
+df_5 %>%
+  select(Category) %>%
+  unique()
+# glimpse()
+```
 
+Terracidiphilus has functions in 25 different categories, shown here.
+
+
+```{r}
 df_5 %>% 
   filter(terracidiphilus.Hmm.presence == "Present") %>%
   filter(ocallatibacter_riparius.Hmm.presence == "Absent") %>%
@@ -27,4 +32,4 @@ df_5 %>%
   select(Function)
 ```
 
-Terracidiphilus is unique from ocallatibacter riparius and telmotobacter bradus, with Acetate => Acetaldehyde and Ni-Fe Hydrogenase functionalities. 
+Terracidiphilus has Acetate => Acetaldehyde and Ni-Fe Hydrogenase functionalities which ocallatibacter riparius and telmotobacter bradus don't have. 
