@@ -1,0 +1,106 @@
+---
+title: "Analysis on METABOLIC_result_full_community"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(readxl)
+library(tidyverse)
+
+metabolic_result_full_community_path <- "data/METABOLIC_result_full_community.xlsx"
+metabolic_result_terracidiphilus_path <- "data/METABOLIC_result_terracidiphilus_5_Carter.xlsx"
+df_metabolic_result <- read_excel(metabolic_result_full_community_path)
+df_5 <- read_excel(metabolic_result_terracidiphilus_path)
+# glimpse(df_5)
+# df_metabolic_result %>% glimpse()
+```
+
+```{r}
+# Clean up column names
+
+colnames(df_metabolic_result) <-
+  c(
+    "Category",
+    "Function",
+    "GeneAbbreviation",
+    "GeneName",
+    "HmmFile",
+    "Corresponding.KO",
+    "Reaction",
+    "Substrate",
+    "Product",
+    "HmmDetectingThreshold",
+    "1Presence", "1HitNumbers", "1Hits",
+    "6Presence", "6HitNumbers", "6Hits",
+    "7Presence", "7HitNumbers", "7Hits",
+    "8Presence", "8HitNumbers", "8Hits",
+    "3Presence", "3HitNumbers", "3Hits",
+    "4Presence", "4HitNumbers", "4Hits",
+    "2Presence", "2HitNumbers", "2Hits",
+    "5Presence", "5HitNumbers", "5Hits"
+  )
+
+# df_metabolic_result %>% glimpse()
+```
+
+
+```{r}
+# Filter out functions that are absent in all
+df_present_functions <-
+  df_metabolic_result %>% 
+  filter(
+    `1Presence` == "Present" |
+    `2Presence` == "Present" | 
+    `3Presence` == "Present" | 
+    `4Presence` == "Present" | 
+    `5Presence` == "Present" | 
+    `6Presence` == "Present" | 
+    `7Presence` == "Present" | 
+    `8Presence` == "Present"
+  )
+
+# df_present_functions %>% glimpse()
+```
+
+```{r}
+# Functions that all have
+df_all_present <-
+  df_metabolic_result %>% 
+  filter(
+    `1Presence` == "Present" &
+    `2Presence` == "Present" & 
+    `3Presence` == "Present" & 
+    `4Presence` == "Present" & 
+    `5Presence` == "Present" & 
+    `6Presence` == "Present" & 
+    `7Presence` == "Present" & 
+    `8Presence` == "Present"
+  )
+df_all_present %>% 
+  select(Function)
+```
+
+```{r}
+# Terracidiphilus (5) functions
+
+df_all_filter_5 <-
+  df_metabolic_result %>% 
+  filter( 
+    `5Presence` == "Present"
+    )
+# df_all_filter_5 %>% 
+#   select(Category) %>% 
+#   unique()
+  # glimpse()
+
+df_5 %>% 
+  filter(terracidiphilus.Hmm.presence == "Present") %>%
+  filter(ocallatibacter_riparius.Hmm.presence == "Absent") %>%
+  filter(telmotobacter_bradus.Hmm.presence == "Absent") %>%
+  select(Function)
+```
+
+Terracidiphilus is unique from ocallatibacter riparius and telmotobacter bradus, with Acetate => Acetaldehyde and Ni-Fe Hydrogenase functionalities. 
+
+
