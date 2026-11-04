@@ -1,9 +1,12 @@
 ---
 title: "Analysis on Full Community metabolic results"
-output: html_document
+output:
+  github_document:
+    toc: true
 ---
 
 # Import data
+
 ```{r message=FALSE, warning=FALSE}
 # Libraries
 library(readxl)
@@ -27,6 +30,7 @@ df_HMMHitNum <- df_HMMHitNum %>%
 ```
 
 # Check for duplicates
+
 ```{r}
 # Source - https://stackoverflow.com/a/16907515
 # Posted by Kikapp
@@ -46,6 +50,7 @@ n_occur[n_occur$Freq > 1,]
 Category and Function columns have duplicates, but Gene.abbreviation doesn't.
 
 # Initial exploration with outdated column names
+
 ```{r}
 # Filter out functions that are absent in all
 # df_present_functions <-
@@ -81,6 +86,7 @@ Category and Function columns have duplicates, but Gene.abbreviation doesn't.
 ```
 
 # Create and compare functional profiles
+
 ```{r}
 df_presence_matrix <- df_FunctionHit %>%
   select(
@@ -161,6 +167,7 @@ df_presence_matrix
 # Identify potential metabolic connections
 
 ## Pivot data for analysis
+
 ```{r}
 presence_long <- df_HMMHitNum %>%
   select(
@@ -177,7 +184,6 @@ presence_long <- df_HMMHitNum %>%
     present = as.integer(presence == "Present")
   )
 ```
-
 
 ```{r}
 # 1. Create a table of detected functions and their reactions
@@ -257,6 +263,7 @@ candidate_links_filtered
 ```
 
 ## Summarize potential connections
+
 ```{r}
 relationship_summary <- candidate_links %>%
   # Remove exact duplicate candidate links
@@ -307,4 +314,3 @@ ggplot(
     panel.grid = element_blank()
   )
 ```
-
