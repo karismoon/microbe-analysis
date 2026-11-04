@@ -1,81 +1,310 @@
 ---
-title: "Analysis on METABOLIC_result_full_community"
+title: "Analysis on Full Community metabolic results"
 output: html_document
 ---
 
+# Import data
 ```{r message=FALSE, warning=FALSE}
 # Libraries
 library(readxl)
 library(tidyverse)
+library(janitor)
+library(dplyr)
 
-metabolic_result_full_community_path <- "data/METABOLIC_result_full_community.xlsx"
+metabolic_result_full_community_path <- "../data/METABOLIC_result_full_community.xlsx"
 
-df_metabolic_result <- read_excel(metabolic_result_full_community_path)
-# df_metabolic_result %>% glimpse()
+df_HMMHitNum <- read_excel(metabolic_result_full_community_path, sheet = "HMMHitNum")
+df_FunctionHit <- read_excel(metabolic_result_full_community_path, sheet = "FunctionHit")
+df_KEGGModuleStepHit <- read_excel(metabolic_result_full_community_path, sheet = "KEGGModuleStepHit")
+df_dbCAN2Hit <- read_excel(metabolic_result_full_community_path, sheet = "dbCAN2Hit")
+df_MEROPSHit <- read_excel(metabolic_result_full_community_path, sheet = "MEROPSHit")
 ```
 
 ```{r}
-# Clean up column names
-
-colnames(df_metabolic_result) <-
-  c(
-    "Category",
-    "Function",
-    "GeneAbbreviation",
-    "GeneName",
-    "HmmFile",
-    "Corresponding.KO",
-    "Reaction",
-    "Substrate",
-    "Product",
-    "HmmDetectingThreshold",
-    "1Presence", "1HitNumbers", "1Hits",
-    "6Presence", "6HitNumbers", "6Hits",
-    "7Presence", "7HitNumbers", "7Hits",
-    "8Presence", "8HitNumbers", "8Hits",
-    "3Presence", "3HitNumbers", "3Hits",
-    "4Presence", "4HitNumbers", "4Hits",
-    "2Presence", "2HitNumbers", "2Hits",
-    "5Presence", "5HitNumbers", "5Hits"
-  )
-
-# df_metabolic_result %>% glimpse()
+df_HMMHitNum <- df_HMMHitNum %>% 
+  clean_names() %>% 
+  rename(gene_function = 'function')
 ```
 
+# Check for duplicates
+```{r}
+# Source - https://stackoverflow.com/a/16907515
+# Posted by Kikapp
+# Retrieved 2026-10-28, License - CC BY-SA 3.0
 
+n_occur <- data.frame(table(df_FunctionHit$Category))
+n_occur[n_occur$Freq > 1,]
+
+n_occur <- data.frame(table(df_FunctionHit$Function))
+n_occur[n_occur$Freq > 1,]
+
+n_occur <- data.frame(table(df_FunctionHit$Gene.abbreviation))
+n_occur[n_occur$Freq > 1,]
+
+```
+
+Category and Function columns have duplicates, but Gene.abbreviation doesn't.
+
+# Initial exploration with outdated column names
 ```{r}
 # Filter out functions that are absent in all
-df_present_functions <-
-  df_metabolic_result %>% 
-  filter(
-    `1Presence` == "Present" |
-    `2Presence` == "Present" | 
-    `3Presence` == "Present" | 
-    `4Presence` == "Present" | 
-    `5Presence` == "Present" | 
-    `6Presence` == "Present" | 
-    `7Presence` == "Present" | 
-    `8Presence` == "Present"
-  )
-
-# df_present_functions %>% glimpse()
+# df_present_functions <-
+#   df_HMMHitNum %>%
+#   filter(
+#     `1Presence` == "Present" |
+#     `2Presence` == "Present" |
+#     `3Presence` == "Present" |
+#     `4Presence` == "Present" |
+#     `5Presence` == "Present" |
+#     `6Presence` == "Present" |
+#     `7Presence` == "Present" |
+#     `8Presence` == "Present"
+#   )
 ```
 
 ```{r}
 # Functions that all have
-df_all_present <-
-  df_metabolic_result %>% 
-  filter(
-    `1Presence` == "Present" &
-    `2Presence` == "Present" & 
-    `3Presence` == "Present" & 
-    `4Presence` == "Present" & 
-    `5Presence` == "Present" & 
-    `6Presence` == "Present" & 
-    `7Presence` == "Present" & 
-    `8Presence` == "Present"
+# df_all_present <-
+#   df_HMMHitNum %>% 
+#   filter(
+#     `1Presence` == "Present" &
+#     `2Presence` == "Present" & 
+#     `3Presence` == "Present" & 
+#     `4Presence` == "Present" & 
+#     `5Presence` == "Present" & 
+#     `6Presence` == "Present" & 
+#     `7Presence` == "Present" & 
+#     `8Presence` == "Present"
+#   )
+# df_all_present %>% 
+#   select(Function)
+```
+
+# Create and compare functional profiles
+```{r}
+df_presence_matrix <- df_FunctionHit %>%
+  select(
+    Gene.abbreviation,
+    ends_with("Function.presence")
+  ) %>%
+  mutate(
+    across(
+      ends_with("Function.presence"),
+      ~ as.integer(.x == "Present")
+    )
+  ) %>%
+  rename_with(
+    ~ str_remove(.x, "\\.Function\\.presence$"),
+    ends_with("Function.presence")
   )
-df_all_present %>% 
-  select(Function)
+
+presence_matrix <- df_presence_matrix %>%
+  select(-Gene.abbreviation) %>%
+  as.matrix() %>%
+  `rownames<-`(df_presence_matrix$Gene.abbreviation)
+```
+
+## Jaccard similarity
+
+```{r}
+library(vegan)
+
+# Rows = microbes; columns = functions
+microbe_matrix <- t(presence_matrix)
+
+# Jaccard similarity
+jaccard_similarity <- 1 - as.matrix(
+  vegdist(microbe_matrix, method = "jaccard", binary = TRUE)
+)
+
+round(jaccard_similarity, 2)
+
+jaccard_similarity %>%
+  as.data.frame() %>%
+  rownames_to_column("microbe1") %>%
+  pivot_longer(
+    cols = -microbe1,
+    names_to = "microbe2",
+    values_to = "similarity"
+  ) %>%
+  ggplot(aes(x = microbe1, y = microbe2, fill = similarity)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(similarity, 2)), size = 3) +
+  coord_equal() +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Functional Similarity Between Microbes",
+    subtitle = "Jaccard similarity based on detected functions",
+    x = NULL,
+    y = NULL,
+    fill = "Similarity"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+```{r}
+df_presence_matrix %>%
+  filter(chitinophaga == 1) %>%
+  select(Gene.abbreviation)
+
+df_presence_matrix
+```
+
+# Identify potential metabolic connections
+
+## Pivot data for analysis
+```{r}
+presence_long <- df_HMMHitNum %>%
+  select(
+    gene_abbreviation,
+    ends_with("_hmm_presence")
+  ) %>%
+  pivot_longer(
+    cols = ends_with("_hmm_presence"),
+    names_to = "microbe",
+    names_pattern = "(.*)_hmm_presence",
+    values_to = "presence"
+  ) %>%
+  mutate(
+    present = as.integer(presence == "Present")
+  )
+```
+
+
+```{r}
+# 1. Create a table of detected functions and their reactions
+reaction_info <- df_HMMHitNum %>%
+  mutate(function_id = row_number()) %>%
+  select(
+    function_id,
+    gene_abbreviation,
+    reaction,
+    substrate,
+    product
+  )
+
+# 2. Identify the functions detected in each microbe
+detected_functions <- presence_long %>%
+  filter(present == 1) %>%
+  left_join(
+    reaction_info,
+    by = "gene_abbreviation"
+  )
+
+# 3. Expand products into one metabolite per row
+producers <- detected_functions %>%
+  filter(!is.na(product), product != "N/A") %>%
+  separate_longer_delim(product, delim = ";") %>%
+  mutate(metabolite = str_trim(product)) %>%
+  filter(
+    !is.na(metabolite),
+    metabolite != "",
+    metabolite != "N/A"
+  ) %>%
+  select(
+    producer = microbe,
+    produced_by = gene_abbreviation,
+    metabolite
+  )
+
+# 4. Expand substrates into one metabolite per row
+consumers <- detected_functions %>%
+  filter(!is.na(substrate), substrate != "N/A") %>%
+  separate_longer_delim(substrate, delim = ";") %>%
+  mutate(metabolite = str_trim(substrate)) %>%
+  filter(
+    !is.na(metabolite),
+    metabolite != "",
+    metabolite != "N/A"
+  ) %>%
+  select(
+    consumer = microbe,
+    consumed_by = gene_abbreviation,
+    metabolite
+  )
+
+# 5. Match potential producer-consumer pairs
+candidate_links <- producers %>%
+  inner_join(consumers, by = "metabolite") %>%
+  filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+
+# Identify metabolites each microbe can produce
+microbe_products <- producers %>%
+  distinct(microbe = producer, metabolite)
+
+# Remove connections where the consumer can also produce
+# the same metabolite
+candidate_links_filtered <- candidate_links %>%
+  anti_join(
+    microbe_products,
+    by = c(
+      "consumer" = "microbe",
+      "metabolite" = "metabolite"
+    )
+  )
+
+candidate_links_filtered
+```
+
+## Summarize potential connections
+```{r}
+relationship_summary <- candidate_links %>%
+  # Remove exact duplicate candidate links
+  distinct(
+    producer, produced_by, metabolite,
+    consumer, consumed_by
+  ) %>%
+  group_by(producer, consumer) %>%
+  summarise(
+    metabolites = paste(
+      sort(unique(metabolite)),
+      collapse = "; "
+    ),
+    n_metabolites = n_distinct(metabolite),
+    n_candidate_links = n(),
+    .groups = "drop"
+  ) %>%
+  # arrange(desc(n_metabolites), desc(n_candidate_links))
+  arrange(producer, consumer)
+
+relationship_summary
+```
+
+```{r}
+
+ggplot(
+  relationship_summary,
+  aes(x = consumer, y = producer, fill = n_metabolites)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n_metabolites), size = 3) +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    name = "Distinct\nmetabolites"
+  ) +
+  scale_x_discrete(drop = FALSE) +
+  scale_y_discrete(drop = FALSE) +
+  labs(
+    title = "Potential Metabolic Connections Between Microbes",
+    subtitle = "Number of distinct matched metabolites",
+    x = "Potential consumer",
+    y = "Potential producer"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
 ```
 
