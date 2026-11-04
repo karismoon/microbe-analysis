@@ -1,5 +1,7 @@
-Analysis on Full Community metabolic results
+Analysis on Full Community
 ================
+Karis Moon
+2026-11-04
 
 - [Import data](#import-data)
 - [Check for duplicates](#check-for-duplicates)
@@ -12,6 +14,12 @@ Analysis on Full Community metabolic results
   connections](#identify-potential-metabolic-connections)
   - [Pivot data for analysis](#pivot-data-for-analysis)
   - [Summarize potential connections](#summarize-potential-connections)
+  - [Filter for unique producers](#filter-for-unique-producers)
+  - [Filter for unique consumers](#filter-for-unique-consumers)
+  - [Filter for unique consumer and
+    producer](#filter-for-unique-consumer-and-producer)
+- [Filter for unique modules in
+  KEGGModuleStepHit](#filter-for-unique-modules-in-keggmodulestephit)
 
 # Import data
 
@@ -35,6 +43,21 @@ df_MEROPSHit <- read_excel(metabolic_result_full_community_path, sheet = "MEROPS
 df_HMMHitNum <- df_HMMHitNum %>% 
   clean_names() %>% 
   rename(gene_function = 'function')
+```
+
+Define microbe names for later use throughout
+
+``` r
+microbes <- c(
+  "chitinophaga",
+  "koribacteraceae",
+  "parvibaculum",
+  "propionicimonas",
+  "rhodomicrobium",
+  "rhodopseudomonas",
+  "sporomusa",
+  "terracidiphilus"
+)
 ```
 
 # Check for duplicates
@@ -226,7 +249,7 @@ jaccard_similarity %>%
   )
 ```
 
-![](full_metabolic_analysis_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+![](full_metabolic_analysis_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ``` r
 df_presence_matrix %>%
@@ -466,4 +489,257 @@ ggplot(
   )
 ```
 
-![](full_metabolic_analysis_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+![](full_metabolic_analysis_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
+
+## Filter for unique producers
+
+Only show producer-consumer relationships where that producer is the
+sole producer of the metabolite in the community.
+
+``` r
+# Identify metabolites that have exactly one microbial producer
+unique_producers <- producers %>%
+  distinct(producer, produced_by, metabolite) %>%
+  group_by(metabolite) %>%
+  filter(n_distinct(producer) == 1) %>%
+  ungroup()
+
+# Match uniquely produced metabolites with consumers
+candidate_links_unique <- unique_producers %>%
+  inner_join(
+    consumers,
+    by = "metabolite"
+  ) %>%
+  filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+```
+
+    ## Warning in inner_join(., consumers, by = "metabolite"): Detected an unexpected many-to-many relationship between `x` and `y`.
+    ## ℹ Row 12 of `x` matches multiple rows in `y`.
+    ## ℹ Row 835 of `y` matches multiple rows in `x`.
+    ## ℹ If a many-to-many relationship is expected, set `relationship =
+    ##   "many-to-many"` to silence this warning.
+
+``` r
+relationship_summary_unique <- candidate_links_unique %>%
+  distinct(
+    producer, metabolite,
+    consumer, consumed_by
+  ) %>%
+  group_by(producer, consumer) %>%
+  summarise(
+    metabolites = paste(
+      sort(unique(metabolite)),
+      collapse = "; "
+    ),
+    n_metabolites = n_distinct(metabolite),
+    n_candidate_links = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(producer, consumer)
+
+relationship_summary_unique
+```
+
+    ## # A tibble: 4 × 5
+    ##   producer         consumer       metabolites    n_metabolites n_candidate_links
+    ##   <chr>            <chr>          <chr>                  <int>             <int>
+    ## 1 rhodopseudomonas chitinophaga   sulfate                    1                 2
+    ## 2 rhodopseudomonas parvibaculum   dimethyl sulf…             2                 3
+    ## 3 rhodopseudomonas rhodomicrobium [SoxY protein…             3                 5
+    ## 4 rhodopseudomonas sporomusa      dimethyl sulf…             1                 1
+
+``` r
+ggplot(
+  relationship_summary_unique,
+  aes(x = consumer, y = producer, fill = n_metabolites)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n_metabolites), size = 3) +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    name = "Distinct\nmetabolites"
+  ) +
+  scale_x_discrete(drop = FALSE) +
+  scale_y_discrete(drop = FALSE) +
+  labs(
+    title = "Potential Metabolic Connections Between Microbes",
+    subtitle = "Only metabolites with a single identified producer",
+    x = "Potential consumer",
+    y = "Potential producer"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+![](full_metabolic_analysis_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+
+## Filter for unique consumers
+
+``` r
+# Identify metabolites that have exactly one microbial consumer
+unique_consumers <- consumers %>%
+  distinct(consumer, consumed_by, metabolite) %>%
+  group_by(metabolite) %>%
+  filter(n_distinct(consumer) == 1) %>%
+  ungroup()
+
+# Match uniquely consumed metabolites with producers
+candidate_links_unique_consumer <- producers %>%
+  inner_join(
+    unique_consumers,
+    by = "metabolite"
+  ) %>%
+  filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+
+relationship_summary_unique_consumer <- candidate_links_unique_consumer %>%
+  distinct(
+    producer, produced_by,
+    metabolite,
+    consumer, consumed_by
+  ) %>%
+  group_by(producer, consumer) %>%
+  summarise(
+    metabolites = paste(
+      sort(unique(metabolite)),
+      collapse = "; "
+    ),
+    n_metabolites = n_distinct(metabolite),
+    n_candidate_links = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(producer, consumer)
+
+relationship_summary_unique_consumer
+```
+
+    ## # A tibble: 13 × 5
+    ##    producer         consumer         metabolites n_metabolites n_candidate_links
+    ##    <chr>            <chr>            <chr>               <int>             <int>
+    ##  1 chitinophaga     parvibaculum     adenylyl s…             1                 2
+    ##  2 chitinophaga     sporomusa        pyruvate                1                 1
+    ##  3 koribacteraceae  sporomusa        pyruvate                1                 3
+    ##  4 parvibaculum     koribacteraceae  NH3                     1                 2
+    ##  5 parvibaculum     sporomusa        pyruvate                1                 1
+    ##  6 propionicimonas  sporomusa        pyruvate                1                 1
+    ##  7 rhodomicrobium   koribacteraceae  NH3                     1                 9
+    ##  8 rhodomicrobium   parvibaculum     adenylyl s…             1                 2
+    ##  9 rhodomicrobium   rhodopseudomonas [SoxY prot…             2                 4
+    ## 10 rhodopseudomonas koribacteraceae  NH3                     1                 9
+    ## 11 rhodopseudomonas parvibaculum     adenylyl s…             1                 1
+    ## 12 sporomusa        koribacteraceae  NH3                     1                 3
+    ## 13 terracidiphilus  sporomusa        pyruvate                1                 1
+
+``` r
+ggplot(
+  relationship_summary_unique_consumer,
+  aes(x = consumer, y = producer, fill = n_metabolites)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n_metabolites), size = 3) +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    name = "Distinct\nmetabolites"
+  ) +
+  scale_x_discrete(drop = FALSE) +
+  scale_y_discrete(drop = FALSE) +
+  labs(
+    title = "Potential Metabolic Connections Between Microbes",
+    subtitle = "Only metabolites with a single identified consumer",
+    x = "Potential consumer",
+    y = "Potential producer"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+![](full_metabolic_analysis_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
+
+## Filter for unique consumer and producer
+
+``` r
+# Identify metabolites that have exactly one microbial consumer and one producer
+candidate_links_both_unique <- unique_producers %>%
+  inner_join(
+    unique_consumers,
+    by = "metabolite"
+  ) %>%
+  # filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+
+candidate_links_both_unique
+```
+
+    ## # A tibble: 1 × 5
+    ##   producer         produced_by metabolite                   consumer consumed_by
+    ##   <chr>            <chr>       <chr>                        <chr>    <chr>      
+    ## 1 rhodopseudomonas soxB        [SoxY protein]-S-disulfanyl… rhodops… soxD
+
+There aren’t any microbes that uniquely consume a metabolite that’s
+uniquely produced by a different microbe, but rhodopseudomonas uniquely
+produces and consumes \[SoxY protein\]-S-disulfanyl-L-cysteine
+
+# Filter for unique modules in KEGGModuleStepHit
+
+For each microbe, find what modules it has that no other microbe has.
+
+``` r
+get_unique_kegg <- function(df, microbe) {
+
+  target_col <- paste0(microbe, ".Module.step.presence")
+
+  df %>% 
+    filter(
+      .data[[target_col]] == "Present",
+      if_all(
+        ends_with(".Module.step.presence") & 
+          !all_of(target_col),
+        ~ .x == "Absent"
+      )
+    )
+}
+
+unique_kegg <- 
+  set_names(microbes) %>% 
+  map(~ get_unique_kegg(df_KEGGModuleStepHit, .x))
+
+unique_kegg_all <- 
+  imap_dfr(
+    unique_kegg,
+    ~ .x %>% 
+      select(Module.step, Module, KO.id, Module.Category) %>% 
+      mutate(microbe = .y)
+  ) %>% 
+  select(microbe, Module.step, Module, KO.id, Module.Category) %>% 
+  arrange(microbe, Module.step)
+
+unique_kegg_all %>% 
+  select(microbe, Module, everything())
+```
+
+    ## # A tibble: 105 × 5
+    ##    microbe         Module                      Module.step KO.id Module.Category
+    ##    <chr>           <chr>                       <chr>       <chr> <chr>          
+    ##  1 chitinophaga    D-Glucuronate degradation,… M00061+03   (K01… Other carbohyd…
+    ##  2 chitinophaga    Heparan sulfate degradation M00078+06   K012… Glycosaminogly…
+    ##  3 chitinophaga    Pectin degradation          M00081+01   K010… Other carbohyd…
+    ##  4 chitinophaga    Coenzyme M biosynthesis     M00358+01   K080… Methane metabo…
+    ##  5 chitinophaga    Isoleucine biosynthesis, p… M00535+01   K090… Branched-chain…
+    ##  6 chitinophaga    Menaquinone biosynthesis, … M00930+04   K117… Cofactor and v…
+    ##  7 chitinophaga    Proline metabolism          M00972+03   K003… Arginine and p…
+    ##  8 koribacteraceae N-glycan precursor biosynt… M00055+10   K007… Glycan biosynt…
+    ##  9 koribacteraceae Thiamine biosynthesis, pro… M00127+01   K031… Cofactor and v…
+    ## 10 koribacteraceae Formaldehyde assimilation,… M00346+02   K008… Methane metabo…
+    ## # ℹ 95 more rows

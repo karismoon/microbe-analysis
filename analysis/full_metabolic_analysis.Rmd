@@ -1,5 +1,7 @@
 ---
-title: "Analysis on Full Community metabolic results"
+title: "Analysis on Full Community"
+author: "Karis Moon"
+date: 2026-11-04
 output:
   github_document:
     toc: true
@@ -28,6 +30,21 @@ df_HMMHitNum <- df_HMMHitNum %>%
   clean_names() %>% 
   rename(gene_function = 'function')
 ```
+
+Define microbe names for later use throughout
+```{r}
+microbes <- c(
+  "chitinophaga",
+  "koribacteraceae",
+  "parvibaculum",
+  "propionicimonas",
+  "rhodomicrobium",
+  "rhodopseudomonas",
+  "sporomusa",
+  "terracidiphilus"
+)
+```
+
 
 # Check for duplicates
 
@@ -314,3 +331,192 @@ ggplot(
     panel.grid = element_blank()
   )
 ```
+
+## Filter for unique producers
+Only show producer-consumer relationships where that producer is the sole producer of the metabolite in the community.
+```{r}
+# Identify metabolites that have exactly one microbial producer
+unique_producers <- producers %>%
+  distinct(producer, produced_by, metabolite) %>%
+  group_by(metabolite) %>%
+  filter(n_distinct(producer) == 1) %>%
+  ungroup()
+
+# Match uniquely produced metabolites with consumers
+candidate_links_unique <- unique_producers %>%
+  inner_join(
+    consumers,
+    by = "metabolite"
+  ) %>%
+  filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+
+relationship_summary_unique <- candidate_links_unique %>%
+  distinct(
+    producer, metabolite,
+    consumer, consumed_by
+  ) %>%
+  group_by(producer, consumer) %>%
+  summarise(
+    metabolites = paste(
+      sort(unique(metabolite)),
+      collapse = "; "
+    ),
+    n_metabolites = n_distinct(metabolite),
+    n_candidate_links = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(producer, consumer)
+
+relationship_summary_unique
+```
+
+```{r}
+ggplot(
+  relationship_summary_unique,
+  aes(x = consumer, y = producer, fill = n_metabolites)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n_metabolites), size = 3) +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    name = "Distinct\nmetabolites"
+  ) +
+  scale_x_discrete(drop = FALSE) +
+  scale_y_discrete(drop = FALSE) +
+  labs(
+    title = "Potential Metabolic Connections Between Microbes",
+    subtitle = "Only metabolites with a single identified producer",
+    x = "Potential consumer",
+    y = "Potential producer"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+
+## Filter for unique consumers
+```{r}
+# Identify metabolites that have exactly one microbial consumer
+unique_consumers <- consumers %>%
+  distinct(consumer, consumed_by, metabolite) %>%
+  group_by(metabolite) %>%
+  filter(n_distinct(consumer) == 1) %>%
+  ungroup()
+
+# Match uniquely consumed metabolites with producers
+candidate_links_unique_consumer <- producers %>%
+  inner_join(
+    unique_consumers,
+    by = "metabolite"
+  ) %>%
+  filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+
+relationship_summary_unique_consumer <- candidate_links_unique_consumer %>%
+  distinct(
+    producer, produced_by,
+    metabolite,
+    consumer, consumed_by
+  ) %>%
+  group_by(producer, consumer) %>%
+  summarise(
+    metabolites = paste(
+      sort(unique(metabolite)),
+      collapse = "; "
+    ),
+    n_metabolites = n_distinct(metabolite),
+    n_candidate_links = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(producer, consumer)
+
+relationship_summary_unique_consumer
+```
+
+```{r}
+ggplot(
+  relationship_summary_unique_consumer,
+  aes(x = consumer, y = producer, fill = n_metabolites)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n_metabolites), size = 3) +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    name = "Distinct\nmetabolites"
+  ) +
+  scale_x_discrete(drop = FALSE) +
+  scale_y_discrete(drop = FALSE) +
+  labs(
+    title = "Potential Metabolic Connections Between Microbes",
+    subtitle = "Only metabolites with a single identified consumer",
+    x = "Potential consumer",
+    y = "Potential producer"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+## Filter for unique consumer and producer
+```{r}
+# Identify metabolites that have exactly one microbial consumer and one producer
+candidate_links_both_unique <- unique_producers %>%
+  inner_join(
+    unique_consumers,
+    by = "metabolite"
+  ) %>%
+  # filter(producer != consumer) %>%
+  distinct() %>%
+  arrange(metabolite, producer, consumer)
+
+candidate_links_both_unique
+```
+
+There aren't any microbes that uniquely consume a metabolite that's uniquely produced by a different microbe, but rhodopseudomonas uniquely produces and consumes [SoxY protein]-S-disulfanyl-L-cysteine
+
+# Filter for unique modules in KEGGModuleStepHit
+For each microbe, find what modules it has that no other microbe has.
+```{r}
+get_unique_kegg <- function(df, microbe) {
+
+  target_col <- paste0(microbe, ".Module.step.presence")
+
+  df %>% 
+    filter(
+      .data[[target_col]] == "Present",
+      if_all(
+        ends_with(".Module.step.presence") & 
+          !all_of(target_col),
+        ~ .x == "Absent"
+      )
+    )
+}
+
+unique_kegg <- 
+  set_names(microbes) %>% 
+  map(~ get_unique_kegg(df_KEGGModuleStepHit, .x))
+
+unique_kegg_all <- 
+  imap_dfr(
+    unique_kegg,
+    ~ .x %>% 
+      select(Module.step, Module, KO.id, Module.Category) %>% 
+      mutate(microbe = .y)
+  ) %>% 
+  select(microbe, Module.step, Module, KO.id, Module.Category) %>% 
+  arrange(microbe, Module.step)
+
+unique_kegg_all %>% 
+  select(microbe, Module, everything())
+```
+
