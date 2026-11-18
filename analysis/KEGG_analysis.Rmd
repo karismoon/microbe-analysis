@@ -17,7 +17,11 @@ library(janitor)
 library(dplyr)
 
 metabolic_result_full_community_path <- "../data/METABOLIC_result_full_community.xlsx"
+metabolite_deep_dive_path <- "../data/Metabolite deep dive.xlsx"
+metabolites_of_interest_path <- "../data/metabolites_of_interest.csv"
 
+df_metabolites_of_interest <- read_csv(metabolites_of_interest_path)
+df_metabolite_deep_dive <- read_excel(metabolite_deep_dive_path)
 df_KEGGModuleStepHit <- read_excel(metabolic_result_full_community_path, sheet = "KEGGModuleStepHit")
 df_dbCAN2Hit <- read_excel(metabolic_result_full_community_path, sheet = "dbCAN2Hit")
 df_MEROPSHit <- read_excel(metabolic_result_full_community_path, sheet = "MEROPSHit")
@@ -36,6 +40,47 @@ microbes <- c(
   "terracidiphilus"
 )
 ```
+
+# Clean metabolite deep dive data
+```{r}
+df_metabolite_deep_dive_longer <-
+  df_metabolite_deep_dive %>%
+  # Split comma-separated organisms into separate rows (creates all Produced x Consumed pairs)
+  separate_longer_delim(`Produced by`, delim = ",") %>%
+  separate_longer_delim(`Consumed by`, delim = ",") %>%
+  
+  # Split multiline pathways into separate rows
+  separate_longer_delim(`Relevant KEGG Pathways`, delim = "\n") %>%
+  
+  # Trim leading/trailing whitespace across all text columns
+  mutate(across(where(is.character), str_trim)) %>%
+  
+  # Remove empty pathway rows caused by blank lines (keep rows where pathway was originally NA)
+  filter(is.na(`Relevant KEGG Pathways`) | `Relevant KEGG Pathways` != "") %>%
+  
+  # Standardize organism capitalization (e.g., "rhodomicrobium" vs "Rhodomicrobium")
+  mutate(
+    `Produced by` = str_to_sentence(`Produced by`),
+    `Consumed by` = str_to_sentence(`Consumed by`)
+  ) %>%
+  
+  # Extract Pathway ID (e.g., "map01110") and Pathway Name into separate columns
+  separate_wider_regex(
+    `Relevant KEGG Pathways`,
+    patterns = c(
+      `Pathway ID` = "^map\\d+",
+      "\\s+",
+      `Pathway Name` = ".*"
+    ),
+    too_few = "align_start" # Safely keeps NAs for metabolites with no pathways
+  ) %>%
+  
+  # Remove the trailing " (1)" count from the Pathway Name
+  mutate(`Pathway Name` = str_remove(`Pathway Name`, "\\s*\\(\\d+\\)$"))
+
+df_metabolite_deep_dive_longer
+```
+
 
 # Filter for unique modules in KEGGModuleStepHit
 For each microbe, find what modules it has that no other microbe has.
@@ -70,5 +115,97 @@ unique_kegg_all <-
   arrange(microbe, Module.step)
 
 unique_kegg_all %>% 
-  select(microbe, Module, everything())
+  select(microbe, Module, everything()) %>% 
+  write.csv("../data/unique_kegg_pathways.csv", row.names = FALSE)
 ```
+
+# Find KEGG modules using metabolites
+
+## Pull compound IDs
+```{r}
+# 1. Download the full KEGG compound synonym table
+kegg_cpds <- read_tsv(
+  "https://rest.kegg.jp/list/compound",
+  col_names = c("kegg_id", "synonyms"),
+  show_col_types = FALSE
+) %>%
+  mutate(kegg_id = str_remove(kegg_id, "^cpd:")) %>%
+  separate_rows(synonyms, sep = "; ") %>%
+  mutate(syn_lower = str_to_lower(str_trim(synonyms)))
+```
+
+```{r}
+# 2. Match your metabolite list (case-insensitive exact synonym match)
+df_metabolites_of_interest <-
+  df_metabolites_of_interest %>% 
+  mutate(syn_lower = str_to_lower(str_trim(metabolite)))
+
+df_compound_matched <- df_metabolites_of_interest %>%
+  left_join(kegg_cpds, by = "syn_lower") %>% 
+  select(metabolite, producer, consumer, analyses_matched, kegg_id)
+
+df_compound_matched
+```
+
+## Pull relevant KEGG modules
+```{r}
+# 1. Pull the KEGG Compound <-> Module lookup table from the REST API
+kegg_cpd_mod <- read_tsv(
+  "https://rest.kegg.jp/link/module/compound",
+  col_names = c("kegg_id", "module_id"),
+  show_col_types = FALSE
+) %>%
+  mutate(
+    kegg_id   = str_remove(kegg_id, "^cpd:"),
+    module_id = str_remove(module_id, "^md:")
+  )
+```
+
+```{r}
+# 2. Summarize module completeness per microbe from KEGGModuleStepHit
+microbe_modules <- df_KEGGModuleStepHit %>%
+  # Extract clean Module ID (e.g., "M00001" from "M00001+01")
+  mutate(module_id = str_extract(Module.step, "^M\\d+")) %>%
+  # Pivot all microbe presence columns into long format
+  pivot_longer(
+    cols = ends_with(".Module.step.presence"),
+    names_to = "microbe",
+    values_to = "presence"
+  ) %>%
+  # Clean microbe name (e.g., "chitinophaga.Module.step.presence" -> "chitinophaga")
+  mutate(microbe = str_remove(microbe, "\\.Module\\.step\\.presence$")) %>%
+  # Calculate how many steps of each module each microbe has
+  group_by(microbe, module_id, Module, Module.Category) %>%
+  summarise(
+    steps_present = sum(presence == "Present", na.rm = TRUE),
+    total_steps   = n(),
+    completeness  = round(steps_present / total_steps, 2),
+    .groups = "drop"
+  ) %>%
+  # Keep modules where the microbe has at least 1 step (or filter completeness >= 0.75 for near-complete)
+  filter(steps_present > 0)
+
+# 3. Join your metabolites -> KEGG Modules -> Microbe Module Presence
+df_metabolite_modules <- df_compound_matched %>%
+  filter(!is.na(kegg_id)) %>%
+  inner_join(kegg_cpd_mod, by = "kegg_id", relationship = "many-to-many") %>%
+  inner_join(microbe_modules, by = "module_id", relationship = "many-to-many")
+
+# 4. Optional: Filter specifically to the producer or consumer microbes in each row
+# (Uses case-insensitive matching in case capitalization differs between tables)
+df_producer_consumer_modules <- df_metabolite_modules %>%
+  mutate(
+    role_in_link = case_when(
+      str_to_lower(microbe) == str_to_lower(producer) &
+        str_to_lower(microbe) == str_to_lower(consumer) ~ "Both",
+      str_to_lower(microbe) == str_to_lower(producer) ~ "Producer",
+      str_to_lower(microbe) == str_to_lower(consumer) ~ "Consumer",
+      TRUE ~ "Other community member"
+    )
+  ) %>%
+  filter(role_in_link != "Other community member") %>%
+  arrange(metabolite, module_id, role_in_link)
+
+df_producer_consumer_modules
+```
+
