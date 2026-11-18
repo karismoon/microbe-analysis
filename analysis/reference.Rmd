@@ -1,0 +1,46 @@
+---
+title: "reference"
+author: "Karis Moon"
+date: 2026-11-18
+output:
+  github_document:
+    toc: true
+---
+
+# Import data
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(readxl)
+library(tidyverse)
+library(janitor)
+library(dplyr)
+
+metabolic_result_full_community_path <- "../data/METABOLIC_result_full_community.xlsx"
+
+df_HMMHitNum <- read_excel(metabolic_result_full_community_path, sheet = "HMMHitNum")
+df_FunctionHit <- read_excel(metabolic_result_full_community_path, sheet = "FunctionHit")
+df_KEGGModuleStepHit <- read_excel(metabolic_result_full_community_path, sheet = "KEGGModuleStepHit")
+df_dbCAN2Hit <- read_excel(metabolic_result_full_community_path, sheet = "dbCAN2Hit")
+df_MEROPSHit <- read_excel(metabolic_result_full_community_path, sheet = "MEROPSHit")
+```
+
+```{r}
+df_HMMHitNum <- df_HMMHitNum %>% 
+  clean_names() %>% 
+  rename(gene_function = 'function')
+```
+
+Define microbe names for later use throughout
+```{r}
+microbes <- c(
+  "chitinophaga",
+  "koribacteraceae",
+  "parvibaculum",
+  "propionicimonas",
+  "rhodomicrobium",
+  "rhodopseudomonas",
+  "sporomusa",
+  "terracidiphilus"
+)
+```

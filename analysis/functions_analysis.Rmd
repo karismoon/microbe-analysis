@@ -1,5 +1,5 @@
 ---
-title: "Analysis on Full Community"
+title: "Full Community Functions & Metabolites Analysis"
 author: "Karis Moon"
 date: 2026-11-04
 output:
@@ -20,9 +20,6 @@ metabolic_result_full_community_path <- "../data/METABOLIC_result_full_community
 
 df_HMMHitNum <- read_excel(metabolic_result_full_community_path, sheet = "HMMHitNum")
 df_FunctionHit <- read_excel(metabolic_result_full_community_path, sheet = "FunctionHit")
-df_KEGGModuleStepHit <- read_excel(metabolic_result_full_community_path, sheet = "KEGGModuleStepHit")
-df_dbCAN2Hit <- read_excel(metabolic_result_full_community_path, sheet = "dbCAN2Hit")
-df_MEROPSHit <- read_excel(metabolic_result_full_community_path, sheet = "MEROPSHit")
 ```
 
 ```{r}
@@ -483,40 +480,4 @@ candidate_links_both_unique
 ```
 
 There aren't any microbes that uniquely consume a metabolite that's uniquely produced by a different microbe, but rhodopseudomonas uniquely produces and consumes [SoxY protein]-S-disulfanyl-L-cysteine
-
-# Filter for unique modules in KEGGModuleStepHit
-For each microbe, find what modules it has that no other microbe has.
-```{r}
-get_unique_kegg <- function(df, microbe) {
-
-  target_col <- paste0(microbe, ".Module.step.presence")
-
-  df %>% 
-    filter(
-      .data[[target_col]] == "Present",
-      if_all(
-        ends_with(".Module.step.presence") & 
-          !all_of(target_col),
-        ~ .x == "Absent"
-      )
-    )
-}
-
-unique_kegg <- 
-  set_names(microbes) %>% 
-  map(~ get_unique_kegg(df_KEGGModuleStepHit, .x))
-
-unique_kegg_all <- 
-  imap_dfr(
-    unique_kegg,
-    ~ .x %>% 
-      select(Module.step, Module, KO.id, Module.Category) %>% 
-      mutate(microbe = .y)
-  ) %>% 
-  select(microbe, Module.step, Module, KO.id, Module.Category) %>% 
-  arrange(microbe, Module.step)
-
-unique_kegg_all %>% 
-  select(microbe, Module, everything())
-```
 
