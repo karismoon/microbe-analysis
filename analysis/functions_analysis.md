@@ -18,6 +18,8 @@ Karis Moon
   - [Filter for unique consumers](#filter-for-unique-consumers)
   - [Filter for unique consumer and
     producer](#filter-for-unique-consumer-and-producer)
+  - [Export all potentially interesting
+    metabolites](#export-all-potentially-interesting-metabolites)
 
 # Import data
 
@@ -685,3 +687,39 @@ candidate_links_both_unique
 There aren’t any microbes that uniquely consume a metabolite that’s
 uniquely produced by a different microbe, but rhodopseudomonas uniquely
 produces and consumes \[SoxY protein\]-S-disulfanyl-L-cysteine
+
+## Export all potentially interesting metabolites
+
+``` r
+# 1. Standardize and label each analysis output
+links_u_prod <- candidate_links_unique %>%
+  select(metabolite, producer, produced_by, consumer, consumed_by) %>%
+  mutate(analysis = "unique_producer")
+
+links_u_cons <- candidate_links_unique_consumer %>%
+  select(metabolite, producer, produced_by, consumer, consumed_by) %>%
+  mutate(analysis = "unique_consumer")
+
+links_both <- candidate_links_both_unique %>%
+  filter(producer != consumer) %>% 
+  select(metabolite, producer, produced_by, consumer, consumed_by) %>%
+  mutate(analysis = "both_unique")
+
+# 2. Combine into one master dataframe
+all_interesting_links <- bind_rows(
+  links_u_prod,
+  links_u_cons,
+  links_both
+) %>%
+  # Collapse duplicate rows if a link appears in multiple analyses
+  group_by(metabolite, producer, consumer) %>%
+  summarise(
+    analyses_matched = paste(sort(unique(analysis)), collapse = "; "),
+    n_analyses = n_distinct(analysis),
+    .groups = "drop"
+  ) %>%
+  arrange(metabolite, producer, consumer)
+
+all_interesting_links %>% 
+    write.csv("../data/metabolites_of_interest.csv", row.names = FALSE)
+```
